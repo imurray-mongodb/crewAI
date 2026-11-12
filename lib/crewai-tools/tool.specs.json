@@ -15977,14 +15977,14 @@
       "env_vars": [
         {
           "default": null,
-          "description": "API key for Browserbase services",
-          "name": "BROWSERBASE_API_KEY",
+          "description": "OpenAI API key used to embed queries (not needed when AZURE_OPENAI_ENDPOINT is set)",
+          "name": "OPENAI_API_KEY",
           "required": false
         },
         {
           "default": null,
-          "description": "Project ID for Browserbase services",
-          "name": "BROWSERBASE_PROJECT_ID",
+          "description": "Azure OpenAI endpoint used to embed queries instead of OpenAI",
+          "name": "AZURE_OPENAI_ENDPOINT",
           "required": false
         }
       ],

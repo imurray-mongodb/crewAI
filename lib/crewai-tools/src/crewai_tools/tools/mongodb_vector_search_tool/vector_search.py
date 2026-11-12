@@ -92,13 +92,13 @@ class MongoDBVectorSearchTool(BaseTool):
     env_vars: list[EnvVar] = Field(
         default_factory=lambda: [
             EnvVar(
-                name="BROWSERBASE_API_KEY",
-                description="API key for Browserbase services",
+                name="OPENAI_API_KEY",
+                description="OpenAI API key used to embed queries (not needed when AZURE_OPENAI_ENDPOINT is set)",
                 required=False,
             ),
             EnvVar(
-                name="BROWSERBASE_PROJECT_ID",
-                description="Project ID for Browserbase services",
+                name="AZURE_OPENAI_ENDPOINT",
+                description="Azure OpenAI endpoint used to embed queries instead of OpenAI",
                 required=False,
             ),
         ]
