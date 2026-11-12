@@ -661,6 +661,7 @@ def test_json_wizard_tool_picker_lists_builtin_tools_across_categories(monkeypat
     }.issubset(tool_names)
     assert {
         "MCPServerAdapter",
+        "MongoDBQueryToolSchema",
         "MongoDBVectorSearchConfig",
         "ScrapegraphScrapeToolSchema",
         "SnowflakeConfig",

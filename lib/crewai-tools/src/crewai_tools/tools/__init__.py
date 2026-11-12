@@ -109,6 +109,10 @@ from crewai_tools.tools.mdx_search_tool.mdx_search_tool import MDXSearchTool
 from crewai_tools.tools.merge_agent_handler_tool.merge_agent_handler_tool import (
     MergeAgentHandlerTool,
 )
+from crewai_tools.tools.mongodb_query_tool import (
+    MongoDBQueryTool,
+    MongoDBQueryToolSchema,
+)
 from crewai_tools.tools.mongodb_vector_search_tool import (
     MongoDBToolSchema,
     MongoDBVectorSearchConfig,
@@ -281,6 +285,8 @@ __all__ = [
     "LlamaIndexTool",
     "MDXSearchTool",
     "MergeAgentHandlerTool",
+    "MongoDBQueryTool",
+    "MongoDBQueryToolSchema",
     "MongoDBToolSchema",
     "MongoDBVectorSearchConfig",
     "MongoDBVectorSearchTool",

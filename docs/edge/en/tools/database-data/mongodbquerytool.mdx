@@ -1,0 +1,78 @@
+---
+title: MongoDB Query Tool
+description: The `MongoDBQueryTool` runs read-only find, aggregate, count and schema-sampling operations against MongoDB.
+icon: "leaf"
+mode: "wide"
+---
+
+# `MongoDBQueryTool`
+
+## Description
+
+The `MongoDBQueryTool` lets an agent explore and query any MongoDB deployment (Atlas, self-managed or local).
+It is read-only: operators that write data or run server-side JavaScript are rejected.
+For semantic search over embeddings, use the [`MongoDBVectorSearchTool`](/en/tools/database-data/mongodbvectorsearchtool).
+
+## Installation
+
+```shell
+pip install crewai-tools[mongodb]
+```
+
+or
+
+```shell
+uv add crewai-tools --extra mongodb
+```
+
+## Initialization Parameters
+
+- `database_name` (str): Required. The database to query.
+- `connection_string` (str): Optional. Connection string. Defaults to the `MONGODB_URI` environment variable.
+- `default_limit` (int, default: `20`): Documents returned when the agent gives no limit.
+- `max_limit` (int, default: `100`): Hard cap on documents returned per call.
+- `max_time_ms` (int, default: `30000`): Server-side time limit for each operation.
+- `sample_size` (int, default: `20`): Documents sampled by `sample_schema`.
+
+## Actions
+
+| `action` | Required inputs | Returns |
+|---|---|---|
+| `list_collections` | none | Collection names |
+| `sample_schema` | `collection` | Field paths and observed types |
+| `find` | `collection` (+ optional `filter`, `projection`, `sort`, `limit`) | Documents |
+| `count` | `collection` (+ optional `filter`) | `{"count": n}` |
+| `aggregate` | `collection`, `pipeline` (+ optional `limit`) | Documents |
+
+## Quick start
+
+```python Code
+from crewai import Agent, Task, Crew
+from crewai_tools import MongoDBQueryTool
+
+mongo = MongoDBQueryTool(
+    connection_string="<MONGODB_URI>",
+    database_name="<database>",
+)
+
+analyst = Agent(
+    role="Data Analyst",
+    goal="Answer questions using the data in MongoDB",
+    backstory="You explore collections before querying them.",
+    tools=[mongo],
+)
+
+task = Task(
+    description="How many documents are in each collection of the database?",
+    expected_output="A short summary.",
+    agent=analyst,
+)
+
+print(Crew(agents=[analyst], tasks=[task]).kickoff())
+```
+
+## Safety
+
+- `$out`, `$merge`, `$function`, `$accumulator` and `$where` are rejected anywhere in a filter, projection or pipeline.
+- Results are capped by `max_limit` and each operation is bounded by `max_time_ms`.
+- Defense in depth: connect with a database user that only has the `read` role.
