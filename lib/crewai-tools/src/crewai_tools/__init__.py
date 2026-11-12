@@ -1,5 +1,6 @@
 from crewai_tools.adapters.enterprise_adapter import EnterpriseActionTool
 from crewai_tools.adapters.mcp_adapter import MCPServerAdapter
+from crewai_tools.adapters.mongodb_mcp_server import mongodb_mcp_server
 from crewai_tools.adapters.zapier_adapter import ZapierActionTool
 from crewai_tools.aws.bedrock.agents.invoke_agent_tool import BedrockInvokeAgentTool
 from crewai_tools.aws.bedrock.knowledge_base.retriever_tool import (
@@ -356,6 +357,7 @@ __all__ = [
     "YoutubeVideoSearchTool",
     "ZapierActionTool",
     "ZapierActionTools",
+    "mongodb_mcp_server",
 ]
 
 __version__ = "1.15.40"

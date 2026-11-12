@@ -206,6 +206,7 @@
                       "edge/en/mcp/sse",
                       "edge/en/mcp/streamable-http",
                       "edge/en/mcp/multiple-servers",
+                      "edge/en/mcp/mongodb",
                       "edge/en/mcp/security"
                     ]
                   },

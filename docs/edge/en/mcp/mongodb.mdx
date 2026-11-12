@@ -1,0 +1,67 @@
+---
+title: MongoDB MCP Server
+description: Connect CrewAI agents to MongoDB with the official `mongodb-mcp-server`, read-only by default.
+icon: leaf
+mode: "wide"
+---
+
+## Overview
+
+[`mongodb-mcp-server`](https://github.com/mongodb-js/mongodb-mcp-server) is MongoDB's official MCP server. It exposes
+tools to query and inspect MongoDB databases (and, optionally, to manage Atlas). The `mongodb_mcp_server` helper in
+`crewai-tools` builds the stdio configuration for you, so you can pass it straight to an agent's `mcps` list.
+
+<Note>
+Node.js is required: the server is launched with `npx`.
+</Note>
+
+## Quick start
+
+```python Code
+from crewai import Agent, Task, Crew
+from crewai_tools import mongodb_mcp_server
+
+analyst = Agent(
+    role="Data Analyst",
+    goal="Answer questions using the data in MongoDB",
+    backstory="You explore collections before querying them.",
+    mcps=[mongodb_mcp_server("mongodb://localhost:27017/mydb")],
+)
+
+task = Task(
+    description="List the collections in the database and describe their schemas.",
+    expected_output="A short summary.",
+    agent=analyst,
+)
+
+print(Crew(agents=[analyst], tasks=[task]).kickoff())
+```
+
+## Options
+
+| Parameter | Default | Description |
+|---|---|---|
+| `connection_string` | `MONGODB_URI` env var | Passed to the server through `MDB_MCP_CONNECTION_STRING` (environment, not command line). If neither is set, the agent must use the server's `connect` tool. |
+| `read_only` | `True` | Starts the server with `--readOnly`, disabling write, create and drop tools. Set `False` explicitly to allow writes. |
+| `allowed_tool_names` | `None` | Expose only these MCP tools to the agent. |
+| `disabled_tools` | `None` | Tools, operation types or categories the server should not register (`MDB_MCP_DISABLED_TOOLS`). |
+| `version` | `"latest"` | `mongodb-mcp-server` npm version. Pin one for reproducible runs. |
+| `env` | `None` | Extra environment variables for the server process, e.g. Atlas API credentials. |
+
+## Restricting tools
+
+```python Code
+server = mongodb_mcp_server(
+    allowed_tool_names=["list-collections", "collection-schema", "find", "count"],
+)
+```
+
+## Security
+
+- Keep `read_only=True` unless the agent needs to write, and connect with a database user that has only the privileges it needs.
+- The helper never puts the connection string on the command line.
+- See [MCP Security](/en/mcp/security) for general guidance on trusting MCP servers.
+
+## Native tool alternative
+
+If you prefer not to run a separate process, use the [`MongoDBQueryTool`](/en/tools/database-data/mongodbquerytool).
