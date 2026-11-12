@@ -171,6 +171,33 @@ crew = Crew(
 result = crew.kickoff()
 ```
 
+## Read-only query actions
+
+By default the tool only runs vector search. To let an agent also query the configured collection directly, enable
+extra actions with `allowed_actions`:
+
+```python Code
+tool = MongoDBVectorSearchTool(
+    connection_string="<MONGODB_URI>",
+    database_name="<database>",
+    collection_name="<collection>",
+    allowed_actions=["vector_search", "find", "count", "aggregate", "sample_schema"],
+)
+```
+
+| `action` | Inputs | Returns |
+|---|---|---|
+| `vector_search` (default) | `query` | Semantically matching documents |
+| `find` | optional `filter`, `projection`, `sort`, `limit` | Documents |
+| `count` | optional `filter` | `{"count": n}` |
+| `aggregate` | `pipeline`, optional `limit` | Documents |
+| `sample_schema` | none | Field paths and observed types |
+
+- Query actions are read-only: `$out`, `$merge`, `$function`, `$accumulator` and `$where` are rejected anywhere in a filter, projection or pipeline.
+- `max_limit` (default `100`) caps returned documents and `max_time_ms` (default `30000`) bounds each operation.
+- If `vector_search` is not in `allowed_actions`, no OpenAI or Azure OpenAI credentials are needed.
+- Connect with a database user that only has the `read` role as defense in depth.
+
 ## Learn More
 
 To learn more about CrewAI integrations with MongoDB, see the following MongoDB guides:

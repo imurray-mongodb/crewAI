@@ -120,3 +120,27 @@ def _wait_for_predicate(
         if monotonic() - start > timeout:
             raise TimeoutError(err)
         sleep(interval)
+
+
+# Operators that write data or run server-side JavaScript. The read actions of
+# MongoDBVectorSearchTool reject any query or pipeline containing one of these.
+FORBIDDEN_OPERATORS: frozenset[str] = frozenset(
+    {"$out", "$merge", "$function", "$accumulator", "$where"}
+)
+
+
+def find_forbidden_operator(value: Any) -> str | None:
+    """Return the first forbidden operator found anywhere in ``value``, if any."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in FORBIDDEN_OPERATORS:
+                return key
+            found = find_forbidden_operator(nested)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = find_forbidden_operator(item)
+            if found:
+                return found
+    return None

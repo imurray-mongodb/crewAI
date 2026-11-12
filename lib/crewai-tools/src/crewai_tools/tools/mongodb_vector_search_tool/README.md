@@ -85,3 +85,22 @@ tool.add_texts(text)
 # Create the vector search index (if it wasn't already created in Atlas).
 tool.create_vector_search_index(dimensions=3072)
 ```
+
+## Read-only query actions
+
+Vector search is the default. Enable direct, read-only queries on the configured
+collection with `allowed_actions`:
+
+```python
+tool = MongoDBVectorSearchTool(
+    connection_string="mongodb+srv://...",
+    database_name="db",
+    collection_name="docs",
+    allowed_actions=["vector_search", "find", "count", "aggregate", "sample_schema"],
+)
+```
+
+Write and JavaScript operators (`$out`, `$merge`, `$function`, `$accumulator`,
+`$where`) are rejected; results are capped by `max_limit` and bounded by
+`max_time_ms`. Without `vector_search` in `allowed_actions`, no embedding
+credentials are required.

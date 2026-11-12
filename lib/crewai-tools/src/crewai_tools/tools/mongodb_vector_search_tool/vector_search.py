@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from importlib.metadata import version
 from logging import getLogger
 import os
-from typing import Any
+from typing import Any, Literal
 
 from crewai.tools import BaseTool, EnvVar
 from openai import AzureOpenAI, Client
@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from crewai_tools.tools.mongodb_vector_search_tool.utils import (
     create_vector_search_index,
+    find_forbidden_operator,
 )
 
 
@@ -45,12 +46,42 @@ class MongoDBVectorSearchConfig(BaseModel):
     )
 
 
+MongoDBAction = Literal["vector_search", "find", "count", "aggregate", "sample_schema"]
+
+
 class MongoDBToolSchema(BaseModel):
     """Input for MongoDBTool."""
 
-    query: str = Field(
-        ...,
-        description="The query to search retrieve relevant information from the MongoDB database. Pass only the query, not the question.",
+    query: str | None = Field(
+        default=None,
+        description="The query to search retrieve relevant information from the MongoDB database. Pass only the query, not the question. Required for the 'vector_search' action.",
+    )
+    action: MongoDBAction = Field(
+        default="vector_search",
+        description=(
+            "'vector_search' (default) semantically searches with `query`. "
+            "'find', 'count', 'aggregate' and 'sample_schema' query the collection "
+            "directly and are only available when enabled on the tool."
+        ),
+    )
+    filter: dict[str, Any] | None = Field(  # noqa: A003
+        default=None,
+        description="MongoDB query filter for 'find' and 'count'.",
+    )
+    projection: dict[str, Any] | None = Field(
+        default=None, description="Fields to include or exclude for 'find'."
+    )
+    sort: dict[str, int] | None = Field(
+        default=None,
+        description="Sort for 'find'; 1 ascending, -1 descending.",
+    )
+    pipeline: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Aggregation pipeline for 'aggregate'. Write stages are not allowed.",
+    )
+    limit: int | None = Field(
+        default=None,
+        description="Maximum documents to return for 'find' and 'aggregate' (capped by the tool's max_limit).",
     )
 
 
@@ -89,6 +120,20 @@ class MongoDBVectorSearchTool(BaseTool):
         default=1536,
         description="Number of dimensions in the embedding vector",
     )
+    allowed_actions: list[MongoDBAction] = Field(
+        default_factory=lambda: ["vector_search"],
+        description=(
+            "Actions the agent may run. Defaults to vector search only. Add "
+            "'find', 'count', 'aggregate' or 'sample_schema' for read-only "
+            "queries on the configured collection."
+        ),
+    )
+    max_limit: int = Field(
+        default=100, ge=1, description="Hard cap on documents returned by 'find' and 'aggregate'."
+    )
+    max_time_ms: int = Field(
+        default=30_000, ge=1, description="Server-side time limit for the read actions, in ms."
+    )
     env_vars: list[EnvVar] = Field(
         default_factory=lambda: [
             EnvVar(
@@ -120,15 +165,16 @@ class MongoDBVectorSearchTool(BaseTool):
             else:
                 raise ImportError("You are missing the 'mongodb' crewai tool.")
 
-        self._openai_client: AzureOpenAI | Client
-        if "AZURE_OPENAI_ENDPOINT" in os.environ:
-            self._openai_client = AzureOpenAI()
-        elif "OPENAI_API_KEY" in os.environ:
-            self._openai_client = Client()
-        else:
-            raise ValueError(
-                "OPENAI_API_KEY environment variable is required for MongoDBVectorSearchTool and it is mandatory to use the tool."
-            )
+        self._openai_client: AzureOpenAI | Client | None = None
+        if "vector_search" in self.allowed_actions:
+            if "AZURE_OPENAI_ENDPOINT" in os.environ:
+                self._openai_client = AzureOpenAI()
+            elif "OPENAI_API_KEY" in os.environ:
+                self._openai_client = Client()
+            else:
+                raise ValueError(
+                    "OPENAI_API_KEY environment variable is required for MongoDBVectorSearchTool and it is mandatory to use the tool."
+                )
 
         from pymongo import MongoClient
         from pymongo.driver_info import DriverInfo
@@ -225,6 +271,10 @@ class MongoDBVectorSearchTool(BaseTool):
         return result_ids
 
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if self._openai_client is None:
+            raise ValueError(
+                "Embeddings are unavailable: 'vector_search' is not in allowed_actions."
+            )
         return [
             i.embedding
             for i in self._openai_client.embeddings.create(
@@ -265,7 +315,111 @@ class MongoDBVectorSearchTool(BaseTool):
             raise ValueError("No documents were inserted.")
         return [str(_id) for _id in result.upserted_ids.values()]
 
-    def _run(self, query: str) -> str:
+    def _run(
+        self,
+        query: str | None = None,
+        action: MongoDBAction = "vector_search",
+        filter: dict[str, Any] | None = None,  # noqa: A002
+        projection: dict[str, Any] | None = None,
+        sort: dict[str, int] | None = None,
+        pipeline: list[dict[str, Any]] | None = None,
+        limit: int | None = None,
+    ) -> str:
+        if action != "vector_search":
+            return self._run_query_action(
+                action,
+                filter=filter,
+                projection=projection,
+                sort=sort,
+                pipeline=pipeline,
+                limit=limit,
+            )
+        if "vector_search" not in self.allowed_actions:
+            return "Error: action 'vector_search' is not enabled on this tool."
+        if not query:
+            return "Error: 'query' is required for the 'vector_search' action."
+        return self._vector_search(query)
+
+    def _run_query_action(
+        self,
+        action: str,
+        *,
+        filter: dict[str, Any] | None,  # noqa: A002
+        projection: dict[str, Any] | None,
+        sort: dict[str, int] | None,
+        pipeline: list[dict[str, Any]] | None,
+        limit: int | None,
+    ) -> str:
+        """Read-only find/count/aggregate/sample_schema on the configured collection."""
+        from bson import json_util
+
+        if action not in self.allowed_actions:
+            return f"Error: action '{action}' is not enabled on this tool."
+        capped = max(1, min(limit or 20, self.max_limit))
+        try:
+            if action == "find":
+                self._reject_forbidden(filter, projection)
+                cursor = self._coll.find(
+                    filter or {}, projection, max_time_ms=self.max_time_ms
+                )
+                if sort:
+                    cursor = cursor.sort(list(sort.items()))
+                result: Any = list(cursor.limit(capped))
+            elif action == "count":
+                self._reject_forbidden(filter)
+                result = {
+                    "count": self._coll.count_documents(
+                        filter or {}, maxTimeMS=self.max_time_ms
+                    )
+                }
+            elif action == "aggregate":
+                if not pipeline:
+                    return "Error: 'pipeline' is required for the 'aggregate' action."
+                self._reject_forbidden(pipeline)
+                result = list(
+                    self._coll.aggregate(
+                        [*pipeline, {"$limit": capped}], maxTimeMS=self.max_time_ms
+                    )
+                )
+            else:  # sample_schema
+                fields: dict[str, set[str]] = {}
+                sampled = 0
+                for doc in self._coll.aggregate(
+                    [{"$sample": {"size": 20}}], maxTimeMS=self.max_time_ms
+                ):
+                    sampled += 1
+                    self._describe_fields(doc, "", 1, fields)
+                result = {
+                    "sampled_documents": sampled,
+                    "fields": {p: sorted(t) for p, t in sorted(fields.items())},
+                }
+        except ValueError as e:
+            return f"Error: {e}"
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            return f"Error: {type(e).__name__}: {e}"
+        return json_util.dumps(result)
+
+    @staticmethod
+    def _reject_forbidden(*values: Any) -> None:
+        for value in values:
+            found = find_forbidden_operator(value)
+            if found:
+                raise ValueError(
+                    f"Operator '{found}' is not allowed: query actions are read-only."
+                )
+
+    @classmethod
+    def _describe_fields(
+        cls, doc: dict[str, Any], prefix: str, depth: int, out: dict[str, set[str]]
+    ) -> None:
+        for key, value in doc.items():
+            path = f"{prefix}{key}"
+            out.setdefault(path, set()).add(type(value).__name__)
+            if isinstance(value, dict) and depth < 3:
+                cls._describe_fields(value, f"{path}.", depth + 1, out)
+
+    def _vector_search(self, query: str) -> str:
         from bson import json_util
 
         try:
